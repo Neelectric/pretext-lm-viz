@@ -75,6 +75,8 @@ Current bundle:
 
 Machine-readable metadata lives in `sources.json`.
 
+Current sweep status lives in `STATUS.md`.
+
 Useful commands:
 
 - `bun run corpus-check --id=ko-unsu-joh-eun-nal 300 600 800`

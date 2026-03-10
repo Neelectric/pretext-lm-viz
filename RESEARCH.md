@@ -2,6 +2,8 @@
 
 Everything we tried, measured, and learned while building this library.
 
+For the current compact corpus / sweep snapshot, see `corpora/STATUS.md`.
+
 ## The problem: DOM measurement interleaving
 
 When UI components independently measure text heights (e.g. virtual scrolling a comment feed), each `getBoundingClientRect()` forces synchronous layout reflow. If components write DOM then read measurements without coordination, the browser re-layouts on every read. For 500 comments, this can cost 30ms+ per frame.
