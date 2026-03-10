@@ -1089,7 +1089,9 @@ function analyzeText(text: string): TextAnalysis {
 
 // --- Public types ---
 
-export type PreparedText = {
+declare const preparedTextBrand: unique symbol
+
+type PreparedCore = {
   widths: number[] // Segment widths, e.g. [42.5, 4.4, 37.2]
   kinds: SegmentBreakKind[] // Break behavior per segment, e.g. ['text', 'space', 'text']
   segLevels: Int8Array | null // Bidi embedding level per segment, or null for pure LTR text
@@ -1097,7 +1099,17 @@ export type PreparedText = {
   discretionaryHyphenWidth: number // Visible width added when a soft hyphen is chosen as the break
 }
 
-export type PreparedTextWithSegments = PreparedText & {
+// Keep the main prepared handle opaque so the public API does not accidentally
+// calcify around the current parallel-array representation.
+export type PreparedText = {
+  readonly [preparedTextBrand]: true
+}
+
+type InternalPreparedText = PreparedText & PreparedCore
+
+// Rich/diagnostic variant that still exposes the structural segment data.
+// Treat this as the unstable escape hatch for experiments and custom rendering.
+export type PreparedTextWithSegments = InternalPreparedText & {
   segments: string[] // Segment text aligned with the parallel arrays, e.g. ['hello', ' ', 'world']
 }
 
@@ -1124,18 +1136,31 @@ export type LayoutLinesResult = LayoutResult & {
 
 // --- Public API ---
 
-function createEmptyPrepared(includeSegments: boolean): PreparedText | PreparedTextWithSegments {
+function createEmptyPrepared(includeSegments: boolean): InternalPreparedText | PreparedTextWithSegments {
   if (includeSegments) {
-    return { widths: [], kinds: [], segLevels: null, breakableWidths: [], discretionaryHyphenWidth: 0, segments: [] }
+    return {
+      widths: [],
+      kinds: [],
+      segLevels: null,
+      breakableWidths: [],
+      discretionaryHyphenWidth: 0,
+      segments: [],
+    } as unknown as PreparedTextWithSegments
   }
-  return { widths: [], kinds: [], segLevels: null, breakableWidths: [], discretionaryHyphenWidth: 0 }
+  return {
+    widths: [],
+    kinds: [],
+    segLevels: null,
+    breakableWidths: [],
+    discretionaryHyphenWidth: 0,
+  } as unknown as InternalPreparedText
 }
 
 function measureAnalysis(
   analysis: TextAnalysis,
   font: string,
   includeSegments: boolean,
-): PreparedText | PreparedTextWithSegments {
+): InternalPreparedText | PreparedTextWithSegments {
   ctx.font = font
   const cache = getSegmentMetricCache(font)
   const fontSize = parseFontSize(font)
@@ -1230,12 +1255,12 @@ function measureAnalysis(
 
   const segLevels = computeSegmentLevels(analysis.normalized, segStarts)
   if (segments !== null) {
-    return { widths, kinds, segLevels, breakableWidths, discretionaryHyphenWidth, segments }
+    return { widths, kinds, segLevels, breakableWidths, discretionaryHyphenWidth, segments } as unknown as PreparedTextWithSegments
   }
-  return { widths, kinds, segLevels, breakableWidths, discretionaryHyphenWidth }
+  return { widths, kinds, segLevels, breakableWidths, discretionaryHyphenWidth } as unknown as InternalPreparedText
 }
 
-function prepareInternal(text: string, font: string, includeSegments: boolean): PreparedText | PreparedTextWithSegments {
+function prepareInternal(text: string, font: string, includeSegments: boolean): InternalPreparedText | PreparedTextWithSegments {
   const analysis = analyzeText(text)
   return measureAnalysis(analysis, font, includeSegments)
 }
@@ -1264,6 +1289,10 @@ export function prepareWithSegments(text: string, font: string): PreparedTextWit
   return prepareInternal(text, font, true) as PreparedTextWithSegments
 }
 
+function getInternalPrepared(prepared: PreparedText): InternalPreparedText {
+  return prepared as InternalPreparedText
+}
+
 type InternalLayoutLine = {
   startSegmentIndex: number
   startGraphemeIndex: number
@@ -1274,7 +1303,7 @@ type InternalLayoutLine = {
 }
 
 function countPreparedLines(prepared: PreparedText, maxWidth: number): number {
-  const { widths, kinds, breakableWidths } = prepared
+  const { widths, kinds, breakableWidths } = getInternalPrepared(prepared)
   if (widths.length === 0) return 0
   if (kinds.includes('soft-hyphen')) {
     return walkPreparedLines(prepared, maxWidth)
@@ -1341,7 +1370,7 @@ function walkPreparedLines(
   maxWidth: number,
   onLine?: (line: InternalLayoutLine) => void,
 ): number {
-  const { widths, kinds, breakableWidths, discretionaryHyphenWidth } = prepared
+  const { widths, kinds, breakableWidths, discretionaryHyphenWidth } = getInternalPrepared(prepared)
   if (widths.length === 0) return 0
 
   let lineCount = 0

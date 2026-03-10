@@ -89,7 +89,6 @@ beforeEach(() => {
 describe('prepare invariants', () => {
   test('whitespace-only input stays empty', () => {
     const prepared = prepare('  \t\n  ', FONT)
-    expect(prepared.widths).toEqual([])
     expect(layout(prepared, 200, LINE_HEIGHT)).toEqual({ lineCount: 0, height: 0 })
   })
 
@@ -268,14 +267,12 @@ describe('prepare invariants', () => {
     expect(prepareWithSegments('𠀀。', FONT).segments).toEqual(['𠀀。'])
   })
 
-  test('prepare and prepareWithSegments agree on numeric data', () => {
+  test('prepare and prepareWithSegments agree on layout behavior', () => {
     const plain = prepare('Alpha beta gamma', FONT)
     const rich = prepareWithSegments('Alpha beta gamma', FONT)
-    expect(rich.widths).toEqual(plain.widths)
-    expect(rich.kinds).toEqual(plain.kinds)
-    expect(rich.breakableWidths).toEqual(plain.breakableWidths)
-    expect(rich.discretionaryHyphenWidth).toBe(plain.discretionaryHyphenWidth)
-    expect(Array.from(rich.segLevels ?? [])).toEqual(Array.from(plain.segLevels ?? []))
+    for (const width of [40, 80, 200]) {
+      expect(layout(plain, width, LINE_HEIGHT)).toEqual(layout(rich, width, LINE_HEIGHT))
+    }
   })
 })
 

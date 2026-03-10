@@ -22,6 +22,8 @@ const { height, lineCount } = layout(block, containerWidth, 19)
 
 `prepare()` does a one-time text analysis pass (whitespace normalization, segmentation, punctuation/CJK fixes), then measures the resulting segments via canvas and caches the widths. On browsers that need emoji correction, it also does one cached DOM calibration read per font. `layout()` walks the cached widths to count lines and multiplies by the caller-provided `lineHeight` — no canvas, no DOM, no string operations. Each `layout()` call is ~0.0002ms.
 
+`prepare()` intentionally returns an opaque handle for the hot path. If you need the richer segment-level structure for diagnostics or custom line rendering, use `prepareWithSegments()` and treat that result as the experimental escape hatch.
+
 ## Practical uses
 
 - Virtualized feeds and comment lists: predict row heights before mount so scrolling stays stable without DOM measurement passes.

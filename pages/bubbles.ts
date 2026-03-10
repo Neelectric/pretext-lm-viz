@@ -1,8 +1,8 @@
-import { prepare, type PreparedText } from '../src/layout.ts'
+import { prepareWithSegments, type PreparedTextWithSegments } from '../src/layout.ts'
 
 // Layout with max-line-width tracking for shrinkwrap.
 // Same algorithm as layout(), but also returns the widest actual line width.
-function layoutShrinkwrap(prepared: PreparedText, maxWidth: number, lineHeight: number): { lineCount: number, height: number, maxLineWidth: number } {
+function layoutShrinkwrap(prepared: PreparedTextWithSegments, maxWidth: number, lineHeight: number): { lineCount: number, height: number, maxLineWidth: number } {
   const { widths, kinds, breakableWidths } = prepared
   if (widths.length === 0) return { lineCount: 0, height: 0, maxLineWidth: 0 }
 
@@ -95,7 +95,7 @@ const messages: { text: string, sent: boolean }[] = [
 ]
 
 type BubbleState = {
-  prepared: PreparedText
+  prepared: PreparedTextWithSegments
   shrinkDiv: HTMLDivElement
   cssDiv: HTMLDivElement
 }
@@ -109,7 +109,7 @@ const bubbles: BubbleState[] = []
 
 for (let i = 0; i < messages.length; i++) {
   const m = messages[i]!
-  const prepared = prepare(m.text, FONT)
+  const prepared = prepareWithSegments(m.text, FONT)
 
   const shrinkDiv = document.createElement('div')
   shrinkDiv.className = `msg ${m.sent ? 'sent' : 'recv'}`

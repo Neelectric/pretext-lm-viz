@@ -1,4 +1,4 @@
-import { prepare, layout, clearCache } from '../src/layout.ts'
+import { prepare, prepareWithSegments, layout, clearCache } from '../src/layout.ts'
 import type { PreparedText } from '../src/layout.ts'
 import { TEXTS } from '../src/test-data.ts'
 import arRisalatAlGhufranPart1 from '../corpora/ar-risalat-al-ghufran-part-1.txt' with { type: 'text' }
@@ -175,7 +175,7 @@ function buildCorpusBenchmarks(): CorpusBenchmarkResult[] {
     }, 1, CORPUS_WARMUP, CORPUS_RUNS)
 
     clearCache()
-    const prepared = prepare(corpus.text, corpus.font)
+    const prepared = prepareWithSegments(corpus.text, corpus.font)
     const lineCount = layout(prepared, corpus.width, corpus.lineHeight).lineCount
 
     const layoutMs = bench(repeatIndex => {
@@ -377,8 +377,8 @@ async function run() {
 
     // layout (1000x for resolution)
     clearCache()
-    const pc = prepare(cjk, FONT)
-    const pl = prepare(lat, FONT)
+    const pc = prepareWithSegments(cjk, FONT)
+    const pl = prepareWithSegments(lat, FONT)
     const cSegs = pc.widths.length
     const lSegs = pl.widths.length
     const lTimes = { cjk: [] as number[], lat: [] as number[] }
