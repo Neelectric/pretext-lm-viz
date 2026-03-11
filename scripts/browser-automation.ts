@@ -8,6 +8,10 @@ export type BrowserSession = {
   close: () => void
 }
 
+export type BrowserSessionOptions = {
+  foreground?: boolean
+}
+
 export type PageServer = {
   baseUrl: string
   process: ChildProcess | null
@@ -56,7 +60,7 @@ function extractReportTextFromUrl(url: string): string {
   return decodeURIComponent(url.slice(hashIndex + '#report='.length))
 }
 
-function createSafariSession(): BrowserSession {
+function createSafariSession(_options: BrowserSessionOptions): BrowserSession {
   const windowIdRaw = runAppleScript([
     'tell application "Safari" to activate',
     'tell application "Safari"',
@@ -108,17 +112,23 @@ function createSafariSession(): BrowserSession {
   }
 }
 
-function createChromeSession(): BrowserSession {
-  const identifiers = runAppleScript([
+function createChromeSession(options: BrowserSessionOptions): BrowserSession {
+  const scriptLines = [
     'tell application "Google Chrome"',
-    'activate',
     'if (count of windows) = 0 then make new window',
     'set targetWindow to front window',
     'set targetTab to make new tab at end of tabs of targetWindow with properties {URL:"about:blank"}',
-    'set active tab index of targetWindow to (count of tabs of targetWindow)',
-    'return (id of targetWindow as string) & "," & (id of targetTab as string)',
-    'end tell',
-  ])
+  ]
+
+  if (options.foreground === true) {
+    scriptLines.splice(1, 0, 'activate')
+    scriptLines.push('set active tab index of targetWindow to (count of tabs of targetWindow)')
+  }
+
+  scriptLines.push('return (id of targetWindow as string) & "," & (id of targetTab as string)')
+  scriptLines.push('end tell')
+
+  const identifiers = runAppleScript(scriptLines)
 
   const [windowIdRaw, tabIdRaw] = identifiers.split(',')
   const windowId = Number.parseInt(windowIdRaw ?? '', 10)
@@ -164,8 +174,11 @@ function createChromeSession(): BrowserSession {
   }
 }
 
-export function createBrowserSession(browser: BrowserKind): BrowserSession {
-  return browser === 'safari' ? createSafariSession() : createChromeSession()
+export function createBrowserSession(
+  browser: BrowserKind,
+  options: BrowserSessionOptions = {},
+): BrowserSession {
+  return browser === 'safari' ? createSafariSession(options) : createChromeSession(options)
 }
 
 export async function ensurePageServer(

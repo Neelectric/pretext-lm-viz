@@ -83,7 +83,7 @@ const port = parseNumberFlag('port', Number.parseInt(process.env['BENCHMARK_CHEC
 const output = parseStringFlag('output')
 
 let serverProcess: ChildProcess | null = null
-const session = createBrowserSession(browser)
+const session = createBrowserSession(browser, { foreground: true })
 
 try {
   const pageServer = await ensurePageServer(port, '/benchmark', process.cwd())
