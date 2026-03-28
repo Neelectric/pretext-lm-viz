@@ -1,5 +1,14 @@
-import { prepare, prepareWithSegments, layout, clearCache, profilePrepare } from '../src/layout.ts'
-import type { PreparedText } from '../src/layout.ts'
+import {
+  prepare,
+  prepareWithSegments,
+  layout,
+  layoutNextLine,
+  layoutWithLines,
+  walkLineRanges,
+  clearCache,
+  profilePrepare,
+} from '../src/layout.ts'
+import type { PreparedText, PreparedTextWithSegments } from '../src/layout.ts'
 import { TEXTS } from '../src/test-data.ts'
 import arRisalatAlGhufranPart1 from '../corpora/ar-risalat-al-ghufran-part-1.txt' with { type: 'text' }
 import hiEidgah from '../corpora/hi-eidgah.txt' with { type: 'text' }
@@ -28,6 +37,11 @@ const LAYOUT_SAMPLE_REPEATS = 200
 const LAYOUT_SAMPLE_WIDTHS = [200, 250, 300, 350, 400] as const
 const DOM_BATCH_SAMPLE_REPEATS = 1
 const DOM_INTERLEAVED_SAMPLE_REPEATS = 1
+const RICH_COUNT = 60
+const RICH_LAYOUT_SAMPLE_REPEATS = 40
+const RICH_LAYOUT_SAMPLE_WIDTHS = [180, 220, 260] as const
+const RICH_LONG_REPEAT = 8
+const RICH_LONG_SAMPLE_WIDTHS = [240, 300, 360] as const
 const CORPUS_LAYOUT_SAMPLE_REPEATS = 200
 const CORPUS_WARMUP = 1
 const CORPUS_RUNS = 7
@@ -53,6 +67,8 @@ type BenchmarkReport = {
   status: 'ready' | 'error'
   requestId?: string
   results?: BenchmarkResult[]
+  richResults?: BenchmarkResult[]
+  richLongResults?: BenchmarkResult[]
   corpusResults?: CorpusBenchmarkResult[]
   message?: string
 }
@@ -294,6 +310,94 @@ function buildCorpusBenchmarks(): CorpusBenchmarkResult[] {
   return corpusResults
 }
 
+function buildRichBenchmarks(
+  prepared: PreparedTextWithSegments[],
+  widths: readonly number[],
+  lineHeight: number,
+  labelPrefix: string,
+  descSuffix: string,
+): BenchmarkResult[] {
+  let richSink = 0
+
+  const layoutWithLinesMs = bench(repeatIndex => {
+    const width = widths[repeatIndex % widths.length]!
+    let sum = 0
+    for (let i = 0; i < prepared.length; i++) {
+      const result = layoutWithLines(prepared[i]!, width, lineHeight)
+      sum += result.lineCount + result.height + result.lines.length
+    }
+    richSink += sum + repeatIndex
+  }, RICH_LAYOUT_SAMPLE_REPEATS)
+
+  const walkLineRangesMs = bench(repeatIndex => {
+    const width = widths[repeatIndex % widths.length]!
+    let sum = 0
+    for (let i = 0; i < prepared.length; i++) {
+      sum += walkLineRanges(prepared[i]!, width, line => {
+        sum += line.width + line.end.segmentIndex - line.start.segmentIndex
+      })
+    }
+    richSink += sum + repeatIndex
+  }, RICH_LAYOUT_SAMPLE_REPEATS)
+
+  const layoutNextLineMs = bench(repeatIndex => {
+    const width = widths[repeatIndex % widths.length]!
+    let sum = 0
+    for (let i = 0; i < prepared.length; i++) {
+      let cursor = { segmentIndex: 0, graphemeIndex: 0 }
+      while (true) {
+        const line = layoutNextLine(prepared[i]!, cursor, width)
+        if (line === null) break
+        sum += line.width + line.text.length + line.end.segmentIndex - line.start.segmentIndex
+        cursor = line.end
+      }
+    }
+    richSink += sum + repeatIndex
+  }, RICH_LAYOUT_SAMPLE_REPEATS)
+
+  document.body.dataset[`${labelPrefix}RichSink`] = String(richSink)
+
+  return [
+    {
+      label: 'Our library: layoutWithLines()',
+      ms: layoutWithLinesMs,
+      desc: `${descSuffix}; materializes text lines`,
+    },
+    {
+      label: 'Our library: walkLineRanges()',
+      ms: walkLineRangesMs,
+      desc: `${descSuffix}; geometry only, no line text strings`,
+    },
+    {
+      label: 'Our library: layoutNextLine()',
+      ms: layoutNextLineMs,
+      desc: `${descSuffix}; streaming line-by-line layout`,
+    },
+  ]
+}
+
+function renderBenchmarkTable(results: BenchmarkResult[], treatFirstAsSetup: boolean): string {
+  const comparable = treatFirstAsSetup ? results.filter(r => r.label !== results[0]?.label) : results
+  const fastest = Math.min(...comparable.map(r => r.ms))
+  let html = '<table><tr><th>Approach</th><th>Median (ms)</th><th>Relative</th><th>Description</th></tr>'
+  const fastestComparable = fastest || 0.01
+  for (let i = 0; i < results.length; i++) {
+    const result = results[i]!
+    const isSetup = treatFirstAsSetup && i === 0
+    const rel = isSetup ? 0 : result.ms / fastestComparable
+    const cls = isSetup ? 'mid' : rel < 1.5 ? 'fast' : rel < 10 ? 'mid' : 'slow'
+    const relText = isSetup ? 'one-time' : rel < 1.01 ? 'fastest' : `${rel.toFixed(1)}×`
+    html += `<tr class="${cls}">
+      <td>${result.label}</td>
+      <td>${result.ms < 0.01 ? '<0.01' : result.ms.toFixed(2)}</td>
+      <td>${relText}</td>
+      <td>${result.desc}</td>
+    </tr>`
+  }
+  html += '</table>'
+  return html
+}
+
 async function run() {
   const root = document.getElementById('root')!
   const reportEl = document.createElement('pre')
@@ -337,6 +441,7 @@ async function run() {
   }
 
   const results: BenchmarkResult[] = []
+  const richTexts = texts.slice(0, RICH_COUNT)
 
   // --- 1. prepare() ---
   root.innerHTML = '<p>Benchmarking prepare()...</p>'
@@ -397,6 +502,37 @@ async function run() {
 
   document.body.removeChild(container)
 
+  // --- Rich shared-corpus batch ---
+  root.innerHTML = '<p>Benchmarking rich line APIs...</p>'
+  await nextFrame()
+  clearCache()
+  const richPrepared = richTexts.map(text => prepareWithSegments(text, FONT))
+  const richResults = buildRichBenchmarks(
+    richPrepared,
+    RICH_LAYOUT_SAMPLE_WIDTHS,
+    LINE_HEIGHT,
+    'shared',
+    `${RICH_COUNT}-text shared-corpus batch across widths ${RICH_LAYOUT_SAMPLE_WIDTHS.join('/')}px`,
+  )
+
+  // --- Rich long-form stress ---
+  root.innerHTML = '<p>Benchmarking long-form rich line APIs...</p>'
+  await nextFrame()
+  clearCache()
+  const richLongPrepared = Array.from({ length: RICH_LONG_REPEAT }, () =>
+    prepareWithSegments(
+      arRisalatAlGhufranPart1,
+      '20px "Geeza Pro", "Noto Naskh Arabic", "Arial", serif',
+    ),
+  )
+  const richLongResults = buildRichBenchmarks(
+    richLongPrepared,
+    RICH_LONG_SAMPLE_WIDTHS,
+    34,
+    'long',
+    `${RICH_LONG_REPEAT} Arabic long-form texts across widths ${RICH_LONG_SAMPLE_WIDTHS.join('/')}px`,
+  )
+
   // --- Long-form corpus stress ---
   root.innerHTML = '<p>Benchmarking long-form corpora...</p>'
   await nextFrame()
@@ -405,9 +541,6 @@ async function run() {
   // --- Render ---
   // Relative speed only for resize approaches (layout vs DOM). prepare() is
   // a one-time setup cost — not comparable to per-resize measurements.
-  const resizeResults = results.filter(r => r.label !== 'Our library: prepare()')
-  const fastest = Math.min(...resizeResults.map(r => r.ms))
-
   const layoutMs = tLayout || 0.01 // guard against 0 from low-res timers (Firefox/Safari)
   let html = `
     <div class="summary">
@@ -417,27 +550,21 @@ async function run() {
       <span class="sep">|</span>
       ${(tBatch / layoutMs).toFixed(0)}× faster than DOM batch
     </div>
-    <table>
-      <tr><th>Approach</th><th>Median (ms)</th><th>Relative</th><th>Description</th></tr>
   `
-  const fastestResize = fastest || 0.01
-  for (let ri = 0; ri < results.length; ri++) {
-    const r = results[ri]!
-    const isPrepare = r.label === 'Our library: prepare()'
-    const rel = isPrepare ? 0 : r.ms / fastestResize
-    const cls = isPrepare ? 'mid' : rel < 1.5 ? 'fast' : rel < 10 ? 'mid' : 'slow'
-    const relText = isPrepare ? 'one-time' : rel < 1.01 ? 'fastest' : rel.toFixed(1) + '×'
-    html += `<tr class="${cls}">
-      <td>${r.label}</td>
-      <td>${r.ms < 0.01 ? '<0.01' : r.ms.toFixed(2)}</td>
-      <td>${relText}</td>
-      <td>${r.desc}</td>
-    </tr>`
-  }
-  html += '</table>'
+  html += renderBenchmarkTable(results, true)
   html += `<p class="note">${COUNT} logical texts per batch, repeated from the shared corpus. ${WARMUP} warmup + ${RUNS} measured runs. Table values are median ms per ${COUNT}-text batch. Layout repeats ${LAYOUT_SAMPLE_REPEATS}× internally and cycles widths ${LAYOUT_SAMPLE_WIDTHS.join('/')}px to stabilize sub-millisecond timings; DOM paths measure one real ${WIDTH_BEFORE}→${WIDTH_AFTER}px resize batch. ${FONT}. Visible containers, position:relative.</p>`
 
   root.innerHTML = html
+  root.innerHTML += `
+    <h2 style="color:#4fc3f7;font-family:monospace;font-size:16px;margin:24px 0 8px">Rich line APIs (shared corpus)</h2>
+    ${renderBenchmarkTable(richResults, false)}
+    <p class="note">${RICH_COUNT} shared-corpus texts prepared with segments. Median ms per batch across widths ${RICH_LAYOUT_SAMPLE_WIDTHS.join('/')}px. This tracks the richer APIs used by shrinkwrap, custom layout, and manual reflow.</p>
+  `
+  root.innerHTML += `
+    <h2 style="color:#4fc3f7;font-family:monospace;font-size:16px;margin:24px 0 8px">Rich line APIs (Arabic long-form stress)</h2>
+    ${renderBenchmarkTable(richLongResults, false)}
+    <p class="note">${RICH_LONG_REPEAT} copies of the Arabic long-form corpus prepared with segments. Median ms per batch across widths ${RICH_LONG_SAMPLE_WIDTHS.join('/')}px. This is the richer-path worst-case canary.</p>
+  `
 
   // --- CJK vs Latin scaling test ---
   const cjkBase = "这是一段中文文本用于测试文本布局库对中日韩字符的支持每个字符之间都可以断行性能测试显示新的文本测量方法比传统方法快了将近一千五百倍"
@@ -536,6 +663,8 @@ async function run() {
   setReport(withRequestId({
     status: 'ready',
     results,
+    richResults,
+    richLongResults,
     corpusResults,
   }))
 }

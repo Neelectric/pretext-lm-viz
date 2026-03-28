@@ -35,6 +35,8 @@ type BenchmarkReport = {
   status: 'ready' | 'error'
   requestId?: string
   results?: BenchmarkResult[]
+  richResults?: BenchmarkResult[]
+  richLongResults?: BenchmarkResult[]
   corpusResults?: CorpusBenchmarkResult[]
   message?: string
 }
@@ -72,6 +74,20 @@ function printReport(report: BenchmarkReport): void {
   console.log('Top-level batch benchmark:')
   for (const result of report.results ?? []) {
     console.log(`  ${result.label}: ${result.ms < 0.01 ? '<0.01' : result.ms.toFixed(2)}ms`)
+  }
+
+  if ((report.richResults ?? []).length > 0) {
+    console.log('Rich line APIs (shared corpus):')
+    for (const result of report.richResults ?? []) {
+      console.log(`  ${result.label}: ${result.ms < 0.01 ? '<0.01' : result.ms.toFixed(2)}ms`)
+    }
+  }
+
+  if ((report.richLongResults ?? []).length > 0) {
+    console.log('Rich line APIs (Arabic long-form stress):')
+    for (const result of report.richLongResults ?? []) {
+      console.log(`  ${result.label}: ${result.ms < 0.01 ? '<0.01' : result.ms.toFixed(2)}ms`)
+    }
   }
 
   if ((report.corpusResults ?? []).length > 0) {
