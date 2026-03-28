@@ -114,6 +114,7 @@ type AppState = {
   orbs: Orb[]
   pointer: PointerState
   drag: DragState | null
+  touchTextActive: boolean
   events: {
     pointerDown: PointerSample | null
     pointerMove: PointerSample | null
@@ -305,6 +306,7 @@ const st: AppState = {
   })),
   pointer: { x: -9999, y: -9999 },
   drag: null,
+  touchTextActive: false,
   events: {
     pointerDown: null,
     pointerMove: null,
@@ -474,6 +476,15 @@ function pointerSampleFromEvent(event: PointerEvent): PointerSample {
   return { x: event.clientX, y: event.clientY }
 }
 
+function isSelectableTextTarget(target: EventTarget | null): boolean {
+  return target instanceof Element && target.closest('.line, .headline-line, .pullquote-line') !== null
+}
+
+function hasActiveTextSelection(): boolean {
+  const selection = window.getSelection()
+  return selection !== null && !selection.isCollapsed && selection.rangeCount > 0
+}
+
 let scheduledRaf: number | null = null
 function scheduleRender(): void {
   if (scheduledRaf !== null) return
@@ -484,33 +495,68 @@ function scheduleRender(): void {
 }
 
 stage.addEventListener('pointerdown', event => {
+  if (event.pointerType === 'touch' && isSelectableTextTarget(event.target)) {
+    st.touchTextActive = true
+    return
+  }
+
   const activeOrbCount = window.innerWidth < NARROW_BREAKPOINT ? NARROW_ACTIVE_ORBS : st.orbs.length
   const radiusScale = window.innerWidth < NARROW_BREAKPOINT ? NARROW_ORB_SCALE : 1
-  if (hitTestOrbs(st.orbs, event.clientX, event.clientY, activeOrbCount, radiusScale) !== -1) {
+  const hitOrbIndex = hitTestOrbs(st.orbs, event.clientX, event.clientY, activeOrbCount, radiusScale)
+  if (hitOrbIndex !== -1) {
     event.preventDefault()
+  } else if (event.pointerType === 'touch') {
+    st.touchTextActive = true
   }
   st.events.pointerDown = pointerSampleFromEvent(event)
   scheduleRender()
 })
 
+stage.addEventListener('touchmove', event => {
+  if (st.touchTextActive || hasActiveTextSelection()) return
+  event.preventDefault()
+}, { passive: false })
+
 window.addEventListener('pointermove', event => {
+  if (event.pointerType === 'touch' && (st.touchTextActive || hasActiveTextSelection()) && st.drag === null) return
   st.events.pointerMove = pointerSampleFromEvent(event)
   scheduleRender()
 })
 
 window.addEventListener('pointerup', event => {
+  if (event.pointerType === 'touch' && (st.touchTextActive || hasActiveTextSelection()) && st.drag === null) {
+    st.touchTextActive = hasActiveTextSelection()
+    return
+  }
+  if (event.pointerType === 'touch') st.touchTextActive = false
   st.events.pointerUp = pointerSampleFromEvent(event)
   scheduleRender()
 })
 
 window.addEventListener('pointercancel', event => {
+  if (event.pointerType === 'touch') st.touchTextActive = false
   st.events.pointerUp = pointerSampleFromEvent(event)
   scheduleRender()
 })
 
 window.addEventListener('resize', () => scheduleRender())
+document.addEventListener('selectionchange', () => {
+  st.touchTextActive = hasActiveTextSelection()
+  scheduleRender()
+})
 
 function render(now: number): boolean {
+  if ((st.touchTextActive || hasActiveTextSelection()) && st.drag === null) {
+    st.events.pointerDown = null
+    st.events.pointerMove = null
+    st.events.pointerUp = null
+    st.lastFrameTime = null
+    domCache.stage.style.userSelect = ''
+    domCache.stage.style.webkitUserSelect = ''
+    document.body.style.cursor = ''
+    return false
+  }
+
   const pageWidth = document.documentElement.clientWidth
   const pageHeight = document.documentElement.clientHeight
   const isNarrow = pageWidth < NARROW_BREAKPOINT
