@@ -320,7 +320,14 @@ async function runGeneration() {
           // Check for EOS
           if (newToken.includes('<|endoftext|>') || newToken.includes('</s>')) {
             console.log('EOS token generated')
-            tokenState.tokenQueue.push(newToken.replace('<|endoftext|>', '').replace('</s>', ''))
+            // Push any text before EOS, plus a visible end marker
+            const cleanToken = newToken.replace('<|endoftext|>', '').replace('</s>', '')
+            if (cleanToken) {
+              tokenState.tokenQueue.push(cleanToken)
+            }
+            // Push EOS marker so frontend knows generation ended
+            tokenState.tokenQueue.push(' ⏹')
+            tokenState.generationComplete = true
             break
           }
 
@@ -329,24 +336,35 @@ async function runGeneration() {
           tokenCount++
         } else {
           console.log('No new token generated, stopping')
+          // Mark generation complete even if we didn't hit EOS
+          tokenState.generationComplete = true
           break
         }
       } else {
+        tokenState.generationComplete = true
         break
       }
+    }
+
+    // If we exited the loop due to max tokens (not cancellation), mark complete
+    if (!tokenState.generationComplete && tokenState.phase === 'streaming') {
+      tokenState.generationComplete = true
+      tokenState.tokenQueue.push(' ⏹')  // Add end marker
     }
 
     console.log(`Generation complete, ${tokenCount} tokens generated`)
   } catch (e) {
     console.error('Generation error:', e)
+    // Mark complete on error too
+    tokenState.generationComplete = true
   } finally {
     // Re-enable input when done
     setPromptEnabled(true)
   }
 
-  tokenState.generationComplete = true
-  animationState.phase = 'complete'
-  animationState.activeComponent = null
+  // Don't set animationState here - let the render loop finish
+  // displaying all queued tokens first. The render loop will
+  // set tokenState.phase = 'complete' after the last token is shown.
   scheduleRender()
 }
 
@@ -1096,6 +1114,13 @@ function render(now: number): boolean {
         animationState.activeComponent = FORWARD_SEQUENCE[animationState.stepIndex]!
       }
     }
+  } else if (tokenState.tokenQueue.length > 0) {
+    // Start a new animation cycle for queued tokens
+    // (This handles tokens added after the model finishes, like EOS marker)
+    animationState.phase = 'forward'
+    animationState.stepIndex = 0
+    animationState.activeComponent = FORWARD_SEQUENCE[0]!
+    animationState.stepStartTime = now
   }
 
   return commitFrame()
