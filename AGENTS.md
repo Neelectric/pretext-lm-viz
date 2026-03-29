@@ -4,27 +4,13 @@ Internal notes for contributors and agents. Use `README.md` as the public source
 
 ### Commands
 
-- `bun start` — serve pages at http://localhost:3000 without watch-mode reload (kills stale `:3000` listeners first)
-- `bun run start:watch` — same page server, but with Bun's watch/reload client when you explicitly want it
-- `bun run site:build` — build the static demo site into `site/` for GitHub Pages
-- `bun run check` — typecheck + lint
-- `bun test` — lightweight invariant tests against the shipped implementation
-- `bun run accuracy-check` / `:safari` / `:firefox` — browser accuracy sweeps
-- `bun run accuracy-snapshot` / `:safari` / `:firefox` — full raw browser accuracy rows written to `accuracy/*.json`
-- `bun run benchmark-check` / `:safari` — benchmark snapshot with both the short shared corpus and long-form corpus stress rows, including `prepare()` phase split (`analyze` vs `measure`) for the long-form corpora
-- `bun run corpus-check --id=... --font='20px ...' --lineHeight=32` — corpus spot check with optional font override
-- `bun run corpus-representative` — refresh the checked-in representative corpus anchor rows in `corpora/representative.json`
-- `bun run corpus-sweep --id=... --samples=9 --font='20px ...'` — sampled width sweep; use this before a dense sweep on large corpora
-- `bun run corpus-font-matrix --id=... --samples=5` — sampled cross-font check for one checked-in corpus
-- `bun run corpus-taxonomy --id=... 300 450 600` — classify current mismatches by rough steering bucket (`edge-fit`, `glue-policy`, `boundary-discovery`, `shaping-context`, etc.) using the full browser diagnostics
-- `bun run gatsby-check` / `:safari` — Gatsby canary diagnostics
-- `bun run gatsby-sweep --start=300 --end=900 --step=10` — fast Gatsby width sweep; add `--diagnose` to rerun mismatching widths through the slow checker
-- `bun run pre-wrap-check --browser=chrome,safari` — small browser-oracle sweep for `{ whiteSpace: 'pre-wrap' }` cases like preserved spaces, tabs, hard breaks, CRLF normalization, and mixed-script indentation
-- `bun run probe-check --text='...' --width=320 --font='20px ...' --dir=rtl --lang=ar --method=range|span --whiteSpace=normal|pre-wrap` — isolate a single snippet in the real browser and choose the browser-line extraction method explicitly
-- `bun run corpus-check --id=mixed-app-text --diagnose --method=span|range 710` — compare corpus-line extraction methods directly when a mismatch may be diagnostic-tool sensitive
+See `DEVELOPMENT.md` for the current command surface and packaging/release checks. Keep the higher-level workflow notes below in sync with that command list rather than duplicating it here.
 
 ### Important files
 
+- `package.json` — published entrypoints now target `dist/layout.js` + `dist/layout.d.ts`; keep the package/export surface aligned with the emitted files
+- `tsconfig.build.json` — publish-time emit config for `dist/`
+- `scripts/package-smoke-test.ts` — tarball-level JS/TS consumer verification for the published package shape
 - `src/layout.ts` — core library; keep `layout()` fast and allocation-light
 - `src/analysis.ts` — normalization, segmentation, glue rules, and text-analysis phase for `prepare()`
 - `src/measurement.ts` — canvas measurement runtime, segment metrics cache, emoji correction, and engine-profile shims
@@ -45,6 +31,8 @@ Internal notes for contributors and agents. Use `README.md` as the public source
 
 ### Implementation notes
 
+- The published package ships built ESM from `dist/`; `dist/` is publish-time output, not checked-in source.
+- Keep shipped library source imports runtime-honest with `.js` specifiers inside `.ts` files. That keeps plain `tsc` emit producing correct JS and `.d.ts` files without a declaration rewrite step.
 - `prepare()` / `prepareWithSegments()` do horizontal-only work. `layout()` / `layoutWithLines()` take explicit `lineHeight`.
 - `setLocale(locale?)` retargets the hoisted word segmenter for future `prepare()` calls and clears shared caches. Use it before preparing new text when the app wants a specific `Intl.Segmenter` locale instead of the runtime default.
 - `prepare()` should stay the opaque fast-path handle. If a page/script needs segment arrays, that should usually flow through `prepareWithSegments()` instead of re-exposing internals on the main prepared type.

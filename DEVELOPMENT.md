@@ -3,9 +3,12 @@
 ```sh
 bun install
 bun start                    # http://localhost:3000 — stable demo pages
+bun run start:lan            # same server, but reachable from other devices on your LAN
 bun run start:watch          # same page server, but with Bun watch/reload enabled
 bun run site:build           # static demo site -> site/
 bun run check                # typecheck + lint
+bun run build:package        # emit dist/ for the published ESM package
+bun run package-smoke-test   # pack the tarball and verify temp JS + TS consumers
 bun test                     # small invariant suite
 bun run accuracy-check       # Chrome browser sweep
 bun run accuracy-check:safari
@@ -18,6 +21,11 @@ bun run benchmark-check:safari
 bun run pre-wrap-check       # small browser-oracle sweep for { whiteSpace: 'pre-wrap' }
 bun run corpus-representative
 ```
+
+Packaging notes:
+- The published package entrypoint is built into `dist/` and generated at package time; `dist/` stays gitignored.
+- Keep library-internal imports using `.js` specifiers inside `.ts` source so plain `tsc -p tsconfig.build.json` emits correct runtime JS and declarations.
+- `bun run package-smoke-test` is the quickest published-artifact confidence check before a release or packaging change.
 
 Useful pages:
 - `/demos/index`
