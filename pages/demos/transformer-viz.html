@@ -1,0 +1,350 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Transformer Forward Pass</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0d0d0f;
+        --surface: #18181b;
+        --border: #2a2a2e;
+        --text: #e4e4e7;
+        --muted: #71717a;
+        --accent: #3b82f6;
+        --accent-glow: rgba(59, 130, 246, 0.5);
+
+        /* Component colors matching classic diagrams */
+        --color-embed: #fce7f3;
+        --color-embed-border: #f9a8d4;
+        --color-norm: #fef9c3;
+        --color-norm-border: #fde047;
+        --color-attention: #fed7aa;
+        --color-attention-border: #fdba74;
+        --color-ffn: #bbf7d0;
+        --color-ffn-border: #86efac;
+        --color-linear: #ddd6fe;
+        --color-linear-border: #c4b5fd;
+        --color-softmax: #bfdbfe;
+        --color-softmax-border: #93c5fd;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        min-height: 100%;
+        height: 100%;
+        background: var(--bg);
+        color: var(--text);
+        overscroll-behavior: none;
+      }
+
+      body {
+        font-family: "SF Pro Display", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        cursor: default;
+        overflow: hidden;
+      }
+
+      .page {
+        position: relative;
+        height: 100vh;
+        overflow: hidden;
+        overscroll-behavior: none;
+        isolation: isolate;
+      }
+
+      .stage {
+        position: relative;
+        height: 100%;
+        width: 100%;
+      }
+
+      /* Architecture container */
+      .architecture {
+        position: absolute;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0;
+        transform: translate(-50%, -50%);
+        z-index: 2;
+      }
+
+      /* Transformer layer block (contains the repeated structure) */
+      .layer-block {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        flex-shrink: 0;
+        padding: 3px 10px;
+        margin: 0;
+        border: 1px dashed var(--border);
+        border-radius: 6px;
+        background: rgba(255, 255, 255, 0.02);
+        min-width: 100px;
+      }
+
+      /* Connectors between layers */
+      .layer-connector {
+        width: 2px;
+        height: 6px;
+        background: var(--border);
+        flex-shrink: 0;
+        margin: 1px 0;
+        border-radius: 1px;
+        transition: background 100ms ease, box-shadow 100ms ease;
+      }
+
+      .layer-connector.active {
+        background: var(--accent);
+        box-shadow: 0 0 6px var(--accent-glow);
+      }
+
+      /* Staggered L-shaped connectors between layers */
+      .staggered-connector {
+        width: 60px;
+        height: 16px;
+        flex-shrink: 0;
+        margin: 2px 0;
+      }
+
+      .staggered-connector .connector-svg {
+        width: 100%;
+        height: 100%;
+      }
+
+      .staggered-connector .connector-path {
+        fill: none;
+        stroke: var(--border);
+        stroke-width: 2;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        transition: stroke 100ms ease, filter 100ms ease;
+      }
+
+      .staggered-connector.active .connector-path {
+        stroke: var(--accent);
+        filter: drop-shadow(0 0 4px var(--accent-glow));
+      }
+
+      .layer-label {
+        position: absolute;
+        left: -28px;
+        top: 50%;
+        transform: translateY(-50%);
+        font: 500 9px/1 "SF Mono", ui-monospace, monospace;
+        color: var(--muted);
+        white-space: nowrap;
+      }
+
+      /* Component blocks */
+      .component {
+        position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 3px 12px;
+        border-radius: 3px;
+        font: 500 9px/1.2 "SF Pro Display", -apple-system, sans-serif;
+        color: #1f2937;
+        transition: box-shadow 150ms ease, transform 150ms ease;
+        text-align: center;
+        min-width: 75px;
+        flex-shrink: 0;
+      }
+
+      .component.active {
+        transform: scale(1.05);
+        box-shadow: 0 0 8px var(--accent), 0 0 20px var(--accent-glow), 0 0 40px var(--accent-glow);
+        outline: 2px solid var(--accent);
+        outline-offset: 1px;
+        z-index: 10;
+      }
+
+      .component--embed {
+        background: var(--color-embed);
+        border: 1.5px solid var(--color-embed-border);
+      }
+
+      .component--norm {
+        background: var(--color-norm);
+        border: 1.5px solid var(--color-norm-border);
+        padding: 2px 10px;
+        font-size: 8px;
+        min-width: 60px;
+      }
+
+      .component--attention {
+        background: var(--color-attention);
+        border: 1.5px solid var(--color-attention-border);
+      }
+
+      .component--ffn {
+        background: var(--color-ffn);
+        border: 1.5px solid var(--color-ffn-border);
+      }
+
+      .component--linear {
+        background: var(--color-linear);
+        border: 1.5px solid var(--color-linear-border);
+      }
+
+      .component--softmax {
+        background: var(--color-softmax);
+        border: 1.5px solid var(--color-softmax-border);
+      }
+
+      /* Residual add circles */
+      .residual-add {
+        width: 12px;
+        height: 12px;
+        min-width: 12px;
+        min-height: 12px;
+        max-width: 12px;
+        max-height: 12px;
+        flex-shrink: 0;
+        border-radius: 50%;
+        border: 1px solid var(--border);
+        background: var(--surface);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font: 600 9px/1 "SF Pro Display", sans-serif;
+        color: var(--text);
+        transition: box-shadow 150ms ease, border-color 150ms ease;
+      }
+
+      .residual-add.active {
+        border-color: var(--accent);
+        border-width: 2px;
+        box-shadow: 0 0 6px var(--accent), 0 0 15px var(--accent-glow), 0 0 30px var(--accent-glow);
+        transform: scale(1.15);
+      }
+
+      /* Arrows and connectors */
+      .connector {
+        width: 1px;
+        height: 6px;
+        min-height: 6px;
+        max-height: 6px;
+        flex-shrink: 0;
+        background: var(--border);
+      }
+
+      .connector--short {
+        height: 4px;
+        min-height: 4px;
+        max-height: 4px;
+      }
+
+
+      /* Text lines */
+      .line {
+        position: absolute;
+        white-space: pre;
+        color: var(--text);
+        font: 400 16px/1.6 "Inter", "SF Pro Text", -apple-system, sans-serif;
+        letter-spacing: -0.01em;
+        user-select: text;
+        cursor: text;
+        z-index: 1;
+      }
+
+      /* Input/Output labels */
+      .io-label {
+        font: 400 8px/1.2 "SF Pro Display", -apple-system, sans-serif;
+        color: var(--muted);
+        margin: 0;
+      }
+
+      /* Controls */
+      .controls {
+        position: fixed;
+        bottom: 24px;
+        left: 50%;
+        transform: translateX(-50%);
+        display: flex;
+        gap: 12px;
+        z-index: 10;
+      }
+
+      .btn {
+        padding: 10px 20px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--surface);
+        color: var(--text);
+        font: 500 14px/1.2 "SF Pro Display", -apple-system, sans-serif;
+        cursor: pointer;
+        transition: border-color 150ms ease, background 150ms ease;
+      }
+
+      .btn:hover {
+        border-color: var(--accent);
+        background: rgba(59, 130, 246, 0.1);
+      }
+
+      .btn:active {
+        background: rgba(59, 130, 246, 0.2);
+      }
+
+      .hint-pill {
+        position: fixed;
+        top: 16px;
+        left: 50%;
+        transform: translateX(-50%);
+        margin: 0;
+        padding: 10px 16px 11px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.08);
+        border: 1px solid var(--border);
+        color: var(--muted);
+        font: 500 12px/1.2 "SF Pro Display", -apple-system, sans-serif;
+        letter-spacing: 0.01em;
+        white-space: nowrap;
+        user-select: none;
+        pointer-events: none;
+        z-index: 5;
+      }
+
+      /* Nx label for layer repetition */
+      .nx-label {
+        position: absolute;
+        left: -36px;
+        top: 50%;
+        transform: translateY(-50%);
+        font: 500 10px/1 "SF Pro Display", -apple-system, sans-serif;
+        color: var(--muted);
+      }
+
+      .layers-container {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 4px 30px;
+        background: rgba(255, 255, 255, 0.01);
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <p class="hint-pill">Llama-2 style decoder forward pass</p>
+      <div id="stage" class="stage"></div>
+      <div class="controls">
+        <button class="btn" id="btn-forward">Forward Pass</button>
+        <button class="btn" id="btn-reset">Reset</button>
+      </div>
+    </main>
+
+    <script type="module" src="./transformer-viz.ts"></script>
+  </body>
+</html>
