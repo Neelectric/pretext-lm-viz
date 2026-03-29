@@ -160,10 +160,10 @@
       }
 
       .component.active {
-        transform: scale(1.05);
-        box-shadow: 0 0 8px var(--accent), 0 0 20px var(--accent-glow), 0 0 40px var(--accent-glow);
-        outline: 2px solid var(--accent);
-        outline-offset: 1px;
+        transform: scale(1.08);
+        box-shadow: 0 0 12px var(--accent), 0 0 30px var(--accent-glow), 0 0 50px var(--accent-glow);
+        outline: 3px solid var(--accent);
+        outline-offset: 2px;
         z-index: 10;
       }
 
@@ -222,9 +222,9 @@
 
       .residual-add.active {
         border-color: var(--accent);
-        border-width: 2px;
-        box-shadow: 0 0 6px var(--accent), 0 0 15px var(--accent-glow), 0 0 30px var(--accent-glow);
-        transform: scale(1.15);
+        border-width: 3px;
+        box-shadow: 0 0 10px var(--accent), 0 0 25px var(--accent-glow), 0 0 40px var(--accent-glow);
+        transform: scale(1.25);
       }
 
       /* Arrows and connectors */
@@ -254,6 +254,41 @@
         user-select: text;
         cursor: text;
         z-index: 1;
+      }
+
+      .line .input-text {
+        color: var(--accent);
+      }
+
+      /* Editable prompt area */
+      .prompt-editor {
+        position: absolute;
+        color: var(--accent);
+        font: 400 16px/1.6 "Inter", "SF Pro Text", -apple-system, sans-serif;
+        letter-spacing: -0.01em;
+        outline: none;
+        min-width: 200px;
+        white-space: pre-wrap;
+        z-index: 5;
+      }
+
+      .prompt-editor:empty::before {
+        content: "Type your prompt here...";
+        color: var(--muted);
+      }
+
+      .prompt-editor.disabled {
+        pointer-events: none;
+      }
+
+      /* Blinking cursor */
+      @keyframes cursor-blink {
+        0%, 50% { border-color: var(--accent); }
+        51%, 100% { border-color: transparent; }
+      }
+
+      .prompt-editor:focus {
+        caret-color: var(--accent);
       }
 
       /* Input/Output labels */
@@ -333,11 +368,58 @@
         padding: 4px 30px;
         background: rgba(255, 255, 255, 0.01);
       }
+
+      /* Draggable elements */
+      .draggable {
+        cursor: grab;
+        user-select: none;
+        z-index: 3;
+      }
+
+      .draggable:hover {
+        border-color: var(--accent);
+      }
+
+      .draggable:active {
+        cursor: grabbing;
+      }
+
+      body.dragging {
+        cursor: grabbing !important;
+      }
+
+      body.dragging * {
+        cursor: grabbing !important;
+      }
+
+      /* Embed and head blocks */
+      .embed-block,
+      .head-block {
+        padding: 4px 8px;
+        border: 1px dashed var(--border);
+        border-radius: 6px;
+        background: rgba(255, 255, 255, 0.02);
+      }
+
+      /* Connector overlay SVG */
+      .connector-overlay {
+        pointer-events: none;
+      }
+
+      .connector-overlay .connector-path {
+        fill: none;
+        stroke: var(--border);
+        stroke-width: 2;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+
     </style>
   </head>
   <body>
     <main class="page">
-      <p class="hint-pill">Llama-2 style decoder forward pass</p>
+      <p class="hint-pill">DistilGPT2 (6 layers) — type prompt, press Enter to generate</p>
+
       <div id="stage" class="stage"></div>
       <div class="controls">
         <button class="btn" id="btn-forward">Forward Pass</button>
