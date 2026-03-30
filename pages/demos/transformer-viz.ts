@@ -28,18 +28,21 @@ import {
 } from './wrap-geometry.js'
 import { pipeline } from '@huggingface/transformers'
 
-// DistilGPT2 has 6 transformer layers
-const NUM_LAYERS = 6
-const LAYERS_PER_COLUMN = 3  // 2 columns × 3 layers = 6
+// Gemma-3-270M has 18 transformer layers
+// Xenova/gpt-neo-125M has 12 layers
+const NUM_LAYERS = 12
+const LAYERS_PER_COLUMN = 3  // 2 columns × 6 layers = 12
 
-const BODY_FONT = '16px "Inter", "SF Pro Text", -apple-system, BlinkMacSystemFont, sans-serif'
-const BODY_LINE_HEIGHT = 26
+const BODY_FONT = '18px "Inter", "SF Pro Text", -apple-system, BlinkMacSystemFont, sans-serif'
+const BODY_LINE_HEIGHT = 28
 
 // Default input prompt
-const DEFAULT_PROMPT = `The transformer architecture`
+const DEFAULT_PROMPT = `In Scotland, wind energy`
 
 // Model settings
-const MODEL_ID = 'Xenova/distilgpt2'
+// const MODEL_ID = 'Xenova/distilgpt2'
+// const MODEL_ID = 'onnx-community/gemma-3-270m-it-ONNX'
+const MODEL_ID = 'Xenova/gpt-neo-125M'
 const MAX_NEW_TOKENS = 100
 
 // Component types for the forward pass animation
@@ -139,6 +142,17 @@ const stage = stageNode
 
 const btnForward = document.getElementById('btn-forward')
 const btnReset = document.getElementById('btn-reset')
+
+// Welcome overlay elements
+const welcomeOverlay = document.getElementById('welcome-overlay')
+const modelIdDisplay = document.getElementById('model-id-display')
+const btnStart = document.getElementById('btn-start')
+const progressText = document.getElementById('progress-text')
+
+// Display the model ID
+if (modelIdDisplay) {
+  modelIdDisplay.textContent = MODEL_ID
+}
 
 // Create editable prompt element
 const promptEditor = document.createElement('div')
@@ -241,17 +255,33 @@ async function loadModel(): Promise<boolean> {
   modelLoadPromise = (async () => {
     try {
       console.log('Loading text generation pipeline...')
+      if (progressText) progressText.textContent = 'Initializing...'
+
       generator = await pipeline('text-generation', MODEL_ID, {
+        dtype: 'fp32',
         progress_callback: (progress: { status: string; progress?: number; file?: string }) => {
           if (progress.progress !== undefined && progress.file) {
-            console.log(`Loading ${progress.file}: ${Math.round(progress.progress)}%`)
+            const pct = Math.round(progress.progress)
+            const shortFile = progress.file.split('/').pop() || progress.file
+            console.log(`Loading ${progress.file}: ${pct}%`)
+            if (progressText) {
+              progressText.textContent = `${shortFile}: ${pct}%`
+            }
           }
         },
       })
       console.log('Model loaded successfully')
+      if (progressText) progressText.textContent = 'Ready!'
       return true
     } catch (e) {
-      console.error('Failed to load model:', e)
+      // Log full error details
+      if (e instanceof Error) {
+        console.error('Failed to load model:', e.message, e.stack)
+        if (progressText) progressText.textContent = `Error: ${e.message}`
+      } else {
+        console.error('Failed to load model (raw):', e, typeof e)
+        if (progressText) progressText.textContent = `Error loading model`
+      }
       generator = null
       modelLoadPromise = null  // Allow retry
       return false
@@ -402,7 +432,7 @@ function createResidualAdd(id: ComponentId): HTMLDivElement {
 function createTransformerLayer(layerIndex: number): HTMLDivElement {
   const block = document.createElement('div')
   block.className = 'layer-block draggable'
-  block.style.gap = '2px'
+  block.style.gap = '4px'
   block.dataset['layerIndex'] = String(layerIndex)
 
   const label = document.createElement('span')
@@ -505,8 +535,8 @@ function getDefaultLayerCenter(layerIndex: number, pageWidth: number, pageHeight
   const posInColumn = layerIndex % LAYERS_PER_COLUMN
 
   // Vertical spacing
-  const layerHeight = 90
-  const layerGap = 32
+  const layerHeight = 115
+  const layerGap = 45
 
   // Total height of one column
   const columnHeight = LAYERS_PER_COLUMN * layerHeight + (LAYERS_PER_COLUMN - 1) * layerGap
@@ -518,7 +548,7 @@ function getDefaultLayerCenter(layerIndex: number, pageWidth: number, pageHeight
   const layerY = columnTop + (LAYERS_PER_COLUMN - 1 - posInColumn) * (layerHeight + layerGap) + layerHeight / 2
 
   // Horizontal spacing between columns
-  const columnGap = 150
+  const columnGap = 185
   const numColumns = Math.ceil(NUM_LAYERS / LAYERS_PER_COLUMN)  // 5 columns
 
   // X position: center the columns (for 5 columns: -2, -1, 0, 1, 2)
@@ -532,14 +562,14 @@ function getDefaultEmbedCenter(pageWidth: number, pageHeight: number): { x: numb
   // Embed is in the bottom center, lower than before
   const centerX = pageWidth / 2
   const l0Center = getDefaultLayerCenter(0, pageWidth, pageHeight)
-  return { x: centerX, y: l0Center.y + 130 }
+  return { x: centerX, y: l0Center.y + 155 }
 }
 
 function getDefaultHeadCenter(pageWidth: number, pageHeight: number): { x: number, y: number } {
   // Head is above the middle column (centered), higher up
   const centerX = pageWidth / 2
   const l11Center = getDefaultLayerCenter(NUM_LAYERS - 1, pageWidth, pageHeight)
-  return { x: centerX, y: l11Center.y - 130 }
+  return { x: centerX, y: l11Center.y - 155 }
 }
 
 // Get the actual center position (default + drag offset)
@@ -1229,9 +1259,33 @@ promptEditor.addEventListener('keydown', (e) => {
   }
 })
 
+// Welcome overlay start button
+btnStart?.addEventListener('click', async () => {
+  if (btnStart instanceof HTMLButtonElement) {
+    btnStart.disabled = true
+    btnStart.textContent = 'Downloading...'
+  }
+
+  const success = await loadModel()
+
+  if (success) {
+    // Hide overlay with fade
+    welcomeOverlay?.classList.add('hidden')
+    // Remove from DOM after animation
+    setTimeout(() => {
+      welcomeOverlay?.remove()
+    }, 400)
+  } else {
+    // Re-enable button on failure
+    if (btnStart instanceof HTMLButtonElement) {
+      btnStart.disabled = false
+      btnStart.textContent = 'Retry Download'
+    }
+  }
+})
+
 // Initialize
 await document.fonts.ready
 commitFrame()
 
-// Load model in background
-loadModel()
+// Don't auto-load model - wait for user to click start button
